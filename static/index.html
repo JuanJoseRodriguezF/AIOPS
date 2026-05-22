@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>AIOps · Detección de Anomalías</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/moment@2.29.4/moment.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-moment@1.0.1/dist/chartjs-adapter-moment.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+</head>
+<body>
+<div class="app">
+    <!-- NAVBAR mejorado -->
+    <nav class="navbar">
+        <div class="nav-brand">
+            🔍 AIOps Anomaly Detection
+            <span class="ml-badge">🤖 Isolation Forest · ML en tiempo real</span>
+        </div>
+        <ul class="nav-links">
+            <li><a href="#" data-tab="dashboard" class="active">Dashboard</a></li>
+            <li><a href="#" data-tab="history">Historial</a></li>
+        </ul>
+    </nav>
+
+    <main class="main-content">
+        <!-- TAB DASHBOARD -->
+        <div id="dashboardTab" class="tab-content active">
+            <!-- Upload compacto -->
+            <div class="upload-section">
+                <input type="file" id="fileInput" accept=".csv">
+                <button id="uploadBtn">📊 Analizar CSV</button>
+            </div>
+            <div class="loading" id="loading" style="display: none;">⏳ Procesando con Isolation Forest...</div>
+
+            <!-- Tarjetas de resumen (más compactas) -->
+            <div class="stats-grid" id="statsGrid" style="display: none;">
+                <div class="stat-card"><h3>📄 Registros</h3><p id="totalRecords">-</p></div>
+                <div class="stat-card stat-card-clickable" id="anomalyCard">
+                    <h3>🔍 Anomalías <span class="lupa-icon">🔎</span></h3>
+                    <p id="anomalyCount">-</p>
+                </div>
+                <div class="stat-card"><h3>📊 % Anomalías</h3><p id="anomalyPct">-</p></div>
+                <div class="stat-card"><h3>⚙️ CPU promedio</h3><p id="avgCpu">-</p></div>
+            </div>
+
+            <!-- Rangos normales + explicación modelo en una sola fila -->
+            <div class="info-row" id="infoRow" style="display: none;">
+                <div class="normal-ranges">
+                    <h3>📐 Rangos normales (percentil 5‑95)</h3>
+                    <div class="ranges-grid" id="rangesGrid"></div>
+                </div>
+                <div class="model-explanation">
+                    <h3>🧠 ¿Cómo funciona el modelo?</h3>
+                    <p><strong>Isolation Forest</strong> aísla anomalías en datos multidimensionales (CPU, red, paquetes).<br>
+                    🔹 <strong>Entrena</strong> con tus datos.<br>
+                    🔹 Marca en <span style="color:#e74c3c;">rojo</span> puntos que se desvían del patrón normal.<br>
+                    🔹 <strong>No necesita etiquetas previas</strong> (aprendizaje no supervisado).</p>
+                </div>
+            </div>
+
+            <!-- Alertas: ahora en forma de tarjetas horizontales (más compactas) -->
+            <div class="alert-panel" id="alertPanel" style="display: none;">
+                <h3>🚨 Alertas recientes</h3>
+                <div id="alertList" class="alert-cards"></div>
+            </div>
+
+            <!-- Barra de filtros compacta -->
+            <div class="filter-bar" id="filterBar" style="display: none;">
+                <div class="date-range-selector">
+                    <label>📅 Desde:</label>
+                    <input type="datetime-local" id="dateFrom" step="1">
+                    <label>📅 Hasta:</label>
+                    <input type="datetime-local" id="dateTo" step="1">
+                    <button id="applyRangeBtn" class="small-btn">Aplicar</button>
+                    <button id="resetRangeBtn" class="small-btn">Reset</button>
+                </div>
+                <button id="resetZoomBtn" class="small-btn">↺ Reset zoom gráficos</button>
+            </div>
+
+            <!-- Gráficos (altura reducida para mejor integración) -->
+            <div class="chart-container"><canvas id="cpuChart"></canvas></div>
+            <div class="chart-container"><canvas id="networkChart"></canvas></div>
+            <div class="chart-container"><canvas id="packetChart"></canvas></div>
+
+            <!-- Tabla de anomalías (compacta) -->
+            <div class="anomaly-table-container" id="anomalyTableContainer" style="display: none;">
+                <h3>📋 Detalle de anomalías (primeras 20)</h3>
+                <div class="table-wrapper">
+                    <table id="anomalyTable">
+                        <thead><tr><th>Timestamp</th><th>CPU (%)</th><th>Red (KB)</th><th>Paquetes</th><th>Métrica anómala</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB HISTORIAL -->
+        <div id="historyTab" class="tab-content">
+            <h2>📁 Historial de análisis</h2>
+            <button id="clearHistoryBtn" class="clear-btn">Borrar todo el historial</button>
+            <div id="historyList" class="history-list"></div>
+        </div>
+    </main>
+</div>
+
+<!-- Modal para desglose de anomalías (mejorado) -->
+<div id="detailModal" class="modal">
+    <div class="modal-content">
+        <span class="close">&times;</span>
+        <h3>🔎 Desglose de anomalías por métrica</h3>
+        <div id="modalDetails" class="modal-details"></div>
+    </div>
+</div>
+
+<script src="/static/script.js"></script>
+</body>
+</html>
