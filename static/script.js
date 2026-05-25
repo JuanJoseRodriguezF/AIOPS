@@ -1,239 +1,267 @@
-// Variables globales
-let fullData = null;
-let currentFilteredData = null;
-let cpuChart, netChart, pktChart;
+let currentRunId = null;
+let currentData = [];
+let charts = {};
 
-// DOM elements
-const fileInput = document.getElementById('fileInput');
-const uploadBtn = document.getElementById('uploadBtn');
-const loadingDiv = document.getElementById('loading');
-const statsGrid = document.getElementById('statsGrid');
-const infoRow = document.getElementById('infoRow');
-const alertPanel = document.getElementById('alertPanel');
-const alertList = document.getElementById('alertList');
-const anomalyTableContainer = document.getElementById('anomalyTableContainer');
-const anomalyTableBody = document.querySelector('#anomalyTable tbody');
-const filterBar = document.getElementById('filterBar');
-const dateFrom = document.getElementById('dateFrom');
-const dateTo = document.getElementById('dateTo');
-const applyRangeBtn = document.getElementById('applyRangeBtn');
-const resetRangeBtn = document.getElementById('resetRangeBtn');
-const resetZoomBtn = document.getElementById('resetZoomBtn');
-const anomalyCard = document.getElementById('anomalyCard');
+const $ = (id) => document.getElementById(id);
+const fileInput = $('fileInput');
+const uploadBtn = $('uploadBtn');
+const loading = $('loading');
+const contaminationInput = $('contaminationInput');
+const contaminationValue = $('contaminationValue');
 
-// Modal
-const modal = document.getElementById('detailModal');
-const modalDetails = document.getElementById('modalDetails');
-const closeModal = document.querySelector('.close');
+contaminationInput?.addEventListener('input', () => {
+    contaminationValue.textContent = `${Math.round(Number(contaminationInput.value) * 100)}%`;
+});
 
-// Historial
-let history = [];
-
-function loadHistory() {
-    const stored = localStorage.getItem('aiops_history');
-    if (stored) { try { history = JSON.parse(stored); } catch(e) { history = []; } }
-    renderHistory();
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, (ch) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 }
-function saveHistory() { localStorage.setItem('aiops_history', JSON.stringify(history)); }
-function addToHistory(filename, stats, anomalyCount, totalRows) {
-    history.unshift({ id: Date.now(), timestamp: new Date().toISOString(), filename, stats, anomalyCount, totalRows });
-    if (history.length > 20) history.pop();
-    saveHistory();
-    renderHistory();
-}
-function renderHistory() {
-    const historyList = document.getElementById('historyList');
-    if (!historyList) return;
-    if (!history.length) { historyList.innerHTML = '<p style="text-align:center; color:gray;">No hay análisis previos.</p>'; return; }
-    historyList.innerHTML = history.map(item => `
-        <div class="history-item">
-            <div><strong>${escapeHtml(item.filename)}</strong><br><small>${new Date(item.timestamp).toLocaleString()}</small><br>Anomalías: ${item.anomalyCount}/${item.totalRows} (${((item.anomalyCount/item.totalRows)*100).toFixed(1)}%)</div>
-            <div class="history-actions"><button onclick="loadHistoryAnalysis(${item.id})">Cargar</button></div>
-        </div>
-    `).join('');
-}
-function loadHistoryAnalysis(id) {
-    const record = history.find(h => h.id === id);
-    if (record?.stats?.data) {
-        fullData = record.stats.data;
-        computeAndDisplay(fullData);
-        document.querySelector('[data-tab="dashboard"]').click();
-    } else alert('No se pudo cargar el análisis');
-}
-function escapeHtml(str) { return str.replace(/[&<>]/g, m => m === '&' ? '&amp;' : m === '<' ? '&lt;' : '&gt;'); }
 
-// Función principal
-function computeAndDisplay(data) {
-    fullData = data;
-    const anomalies = data.filter(d => d.is_anomaly);
-    const total = data.length;
-    const anomalyCount = anomalies.length;
-    const avgCpu = (data.reduce((a,b)=>a+b.cpu_usage,0)/total).toFixed(2);
-
-    document.getElementById('totalRecords').innerText = total;
-    document.getElementById('anomalyCount').innerText = anomalyCount;
-    document.getElementById('anomalyPct').innerText = ((anomalyCount/total)*100).toFixed(2)+'%';
-    document.getElementById('avgCpu').innerText = avgCpu+'%';
-    statsGrid.style.display = 'grid';
-    infoRow.style.display = 'flex';
-    filterBar.style.display = 'flex';
-
-    // Rangos normales percentil 5-95
-    const percentile = (arr, p) => {
-        const sorted = [...arr].sort((a,b)=>a-b);
-        const idx = (p/100)*(sorted.length-1);
-        const low = Math.floor(idx), high = Math.ceil(idx);
-        return low===high ? sorted[low] : sorted[low]*(1-(idx-low)) + sorted[high]*(idx-low);
-    };
-    const cpuVals = data.map(d=>d.cpu_usage), netVals = data.map(d=>d.network_in_kb), pktVals = data.map(d=>d.packet_rate);
-    const cpuLow = percentile(cpuVals,5).toFixed(2), cpuHigh = percentile(cpuVals,95).toFixed(2);
-    const netLow = percentile(netVals,5).toFixed(2), netHigh = percentile(netVals,95).toFixed(2);
-    const pktLow = percentile(pktVals,5).toFixed(2), pktHigh = percentile(pktVals,95).toFixed(2);
-    document.getElementById('rangesGrid').innerHTML = `
-        <div class="range-item">📊 CPU: ${cpuLow}% - ${cpuHigh}%</div>
-        <div class="range-item">🌐 Red: ${netLow} KB - ${netHigh} KB</div>
-        <div class="range-item">📦 Paquetes: ${pktLow} - ${pktHigh}</div>
-    `;
-
-    // Alertas en forma de tarjetas compactas
-    const alertItems = anomalies.slice(0,12).map(anom => {
-        let metric = '';
-        if (anom.cpu_usage < cpuLow || anom.cpu_usage > cpuHigh) metric += 'CPU ';
-        if (anom.network_in_kb < netLow || anom.network_in_kb > netHigh) metric += 'Red ';
-        if (anom.packet_rate < pktLow || anom.packet_rate > pktHigh) metric += 'Paquetes';
-        if (!metric) metric = 'Múltiples';
-        return `<div>⚠️ ${anom.timestamp} — <strong>${metric.trim()}</strong> (CPU:${anom.cpu_usage}%, Red:${anom.network_in_kb} KB, Paq:${anom.packet_rate})</div>`;
-    }).join('');
-    alertList.innerHTML = alertItems || '<div>✅ No se detectaron anomalías.</div>';
-    alertPanel.style.display = 'block';
-
-    // Tabla anomalías
-    anomalyTableBody.innerHTML = anomalies.slice(0,20).map(anom => {
-        let bad = '';
-        if (anom.cpu_usage < cpuLow || anom.cpu_usage > cpuHigh) bad += 'CPU ';
-        if (anom.network_in_kb < netLow || anom.network_in_kb > netHigh) bad += 'Red ';
-        if (anom.packet_rate < pktLow || anom.packet_rate > pktHigh) bad += 'Paq';
-        return `<tr><td>${anom.timestamp}</td><td>${anom.cpu_usage}</td><td>${anom.network_in_kb}</td><td>${anom.packet_rate}</td><td>${bad}</td></tr>`;
-    }).join('');
-    anomalyTableContainer.style.display = 'block';
-
-    // Configurar fechas mín/máx
-    if (data.length) {
-        const first = data[0].timestamp.replace(' ', 'T').slice(0,19);
-        const last = data[data.length-1].timestamp.replace(' ', 'T').slice(0,19);
-        dateFrom.value = first; dateTo.value = last;
-        dateFrom.min = first; dateFrom.max = last;
-        dateTo.min = first; dateTo.max = last;
+async function fetchJson(url, options = {}) {
+    const response = await fetch(url, options);
+    if (!response.ok) {
+        const error = await response.text();
+        throw new Error(error);
     }
-    applyDateFilter();
-
-    // Modal de desglose
-    let cpuAnom=0, netAnom=0, pktAnom=0;
-    anomalies.forEach(anom => {
-        if (anom.cpu_usage < cpuLow || anom.cpu_usage > cpuHigh) cpuAnom++;
-        if (anom.network_in_kb < netLow || anom.network_in_kb > netHigh) netAnom++;
-        if (anom.packet_rate < pktLow || anom.packet_rate > pktHigh) pktAnom++;
-    });
-    modalDetails.innerHTML = `
-        <p><strong>Total anomalías:</strong> ${anomalies.length}</p>
-        <ul><li>🔴 <strong>CPU:</strong> ${cpuAnom}</li><li>🟢 <strong>Red:</strong> ${netAnom}</li><li>🟠 <strong>Paquetes:</strong> ${pktAnom}</li></ul>
-        <hr><small>Rangos normales: CPU ${cpuLow}-${cpuHigh}% · Red ${netLow}-${netHigh} KB · Paq ${pktLow}-${pktHigh}</small>
-    `;
+    return response.json();
 }
 
-// Filtro por fecha
-function applyDateFilter() {
-    if (!fullData) return;
-    const from = new Date(dateFrom.value);
-    const to = new Date(dateTo.value);
-    to.setSeconds(to.getSeconds()+1);
-    const filtered = fullData.filter(d => {
-        const dDate = new Date(d.timestamp.replace(' ', 'T'));
-        return dDate >= from && dDate <= to;
-    });
-    currentFilteredData = filtered;
-    renderCharts(filtered);
-}
-function resetDateFilter() {
-    if (fullData?.length) {
-        const first = fullData[0].timestamp.replace(' ', 'T').slice(0,19);
-        const last = fullData[fullData.length-1].timestamp.replace(' ', 'T').slice(0,19);
-        dateFrom.value = first; dateTo.value = last;
-        applyDateFilter();
-    }
-}
-applyRangeBtn.addEventListener('click', applyDateFilter);
-resetRangeBtn.addEventListener('click', resetDateFilter);
-
-// Gráficos
-function renderCharts(data) {
-    if (!data || data.length === 0) return;
-    const datasets = (metric, label, color) => {
-        const normal = data.filter(p => !p.is_anomaly).map(p => ({x: p.timestamp, y: p[metric]}));
-        const anomalies = data.filter(p => p.is_anomaly).map(p => ({x: p.timestamp, y: p[metric]}));
-        return [
-            { label: `${label} (normal)`, data: normal, borderColor: color, borderWidth: 1.5, pointRadius: 1.5, tension: 0.1, fill: false, showLine: true },
-            { label: 'Anomalías', data: anomalies, borderColor: 'red', backgroundColor: 'red', pointRadius: 5, showLine: false, type: 'scatter' }
-        ];
-    };
-    const cpuDs = datasets('cpu_usage', 'CPU %', '#3498db');
-    const netDs = datasets('network_in_kb', 'Red KB', '#2ecc71');
-    const pktDs = datasets('packet_rate', 'Paquetes', '#e67e22');
-
-    function create(ctx, label, ds) {
-        return new Chart(ctx, {
-            type: 'line',
-            data: { datasets: ds },
-            options: {
-                responsive: true, maintainAspectRatio: false,
-                scales: { x: { type: 'time', time: { tooltipFormat: 'YYYY-MM-DD HH:mm:ss', unit: 'minute' }, title: { display: true, text: 'Tiempo' } },
-                           y: { title: { display: true, text: label } } },
-                plugins: { zoom: { pan: { enabled: true, mode: 'x' }, zoom: { wheel: { enabled: true }, mode: 'x' } } }
-            }
-        });
-    }
-    if (cpuChart) cpuChart.destroy();
-    if (netChart) netChart.destroy();
-    if (pktChart) pktChart.destroy();
-    cpuChart = create(document.getElementById('cpuChart'), 'Uso de CPU (%)', cpuDs);
-    netChart = create(document.getElementById('networkChart'), 'Tráfico de Red (KB)', netDs);
-    pktChart = create(document.getElementById('packetChart'), 'Tasa de Paquetes', pktDs);
-}
-function resetZoom() { if(cpuChart) cpuChart.resetZoom(); if(netChart) netChart.resetZoom(); if(pktChart) pktChart.resetZoom(); }
-resetZoomBtn.addEventListener('click', resetZoom);
-
-// Subida CSV
 uploadBtn.addEventListener('click', async () => {
-    if (!fileInput.files.length) return alert('Selecciona un archivo CSV');
-    const file = fileInput.files[0];
-    const formData = new FormData(); formData.append('file', file);
-    loadingDiv.style.display = 'block';
+    if (!fileInput.files.length) {
+        alert('Selecciona un archivo CSV antes de analizar.');
+        return;
+    }
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    loading.style.display = 'block';
+    uploadBtn.disabled = true;
+
     try {
-        const res = await fetch('/upload', { method:'POST', body:formData });
-        if (!res.ok) throw new Error(await res.text());
-        const json = await res.json();
-        const data = json.data;
-        const anomalyCount = data.filter(d=>d.is_anomaly).length;
-        addToHistory(file.name, { data }, anomalyCount, data.length);
-        computeAndDisplay(data);
-    } catch(err) { alert('Error: '+err.message); }
-    finally { loadingDiv.style.display = 'none'; }
+        const contamination = Number(contaminationInput.value);
+        const result = await fetchJson(`/upload?contamination=${contamination}`, { method: 'POST', body: formData });
+        currentRunId = result.run_id;
+        currentData = result.data || [];
+        renderAnalysis(result);
+        await loadHistory();
+        await loadAlerts();
+    } catch (error) {
+        alert('Error procesando el archivo: ' + error.message);
+    } finally {
+        loading.style.display = 'none';
+        uploadBtn.disabled = false;
+    }
 });
 
-// Navegación y modal
-anomalyCard?.addEventListener('click', ()=>modal.style.display='block');
-closeModal.onclick = ()=>modal.style.display='none';
-window.onclick = e => { if(e.target==modal) modal.style.display='none'; };
+function renderAnalysis(result) {
+    const metrics = result.metrics || {};
+    $('statsGrid').style.display = 'grid';
+    $('contextPanel').style.display = 'grid';
+    $('anomalyTableContainer').style.display = 'block';
+
+    $('totalRecords').textContent = metrics.total_records ?? '-';
+    $('anomalyCount').textContent = metrics.anomaly_count ?? '-';
+    $('anomalyPct').textContent = `${metrics.anomaly_pct ?? 0}% de los registros`;
+    $('avgCpu').textContent = `${metrics.avg_cpu ?? 0}%`;
+    $('avgLatency').textContent = `${metrics.avg_response_time_ms ?? 0} ms`;
+    $('failedAuth').textContent = metrics.failed_auth_attempts_total ?? 0;
+    $('activeRunLabel').textContent = `Análisis #${result.run_id} · ${result.model || 'ML'} · sensibilidad ${Math.round((result.contamination || 0) * 100)}%`;
+
+    $('featureList').innerHTML = (result.features || []).map(f => `<span>${escapeHtml(f)}</span>`).join('') || '<span>Sin variables reportadas</span>';
+    $('labelSummary').innerHTML = Object.entries(result.label_summary || {}).map(([key, value]) => `<span>${escapeHtml(key)}: ${value}</span>`).join('') || '<span>Dataset sin etiquetas</span>';
+    $('inlineAlerts').innerHTML = (result.alerts || []).slice(0, 5).map(a => `<div class="mini-alert ${escapeHtml(a.severity)}"><strong>${escapeHtml(a.severity)}</strong> ${escapeHtml(a.description)}</div>`).join('') || '<div class="mini-alert ok">Sin alertas críticas</div>';
+
+    renderCharts(currentData);
+    renderAnomalyTable(currentData);
+}
+
+function renderAnomalyTable(data) {
+    const anomalies = data.filter(item => item.is_anomaly).slice(0, 50);
+    $('anomalyTableBody').innerHTML = anomalies.map(row => `
+        <tr>
+            <td>${escapeHtml(row.timestamp)}</td>
+            <td>${escapeHtml(row.device_id || 'N/A')}</td>
+            <td>${escapeHtml(row.device_type || 'N/A')}</td>
+            <td>${escapeHtml(row.cpu_usage)}</td>
+            <td>${escapeHtml(row.memory_usage ?? 'N/A')}</td>
+            <td>${escapeHtml(row.network_in_kb)} / ${escapeHtml(row.network_out_kb ?? 'N/A')}</td>
+            <td>${escapeHtml(row.failed_auth_attempts ?? 0)}</td>
+            <td><span class="risk-pill">${Number(row.anomaly_score || 0).toFixed(3)}</span></td>
+            <td>${escapeHtml(row.label || 'Sin etiqueta')}</td>
+        </tr>
+    `).join('') || '<tr><td colspan="9">No se detectaron anomalías.</td></tr>';
+}
+
+function renderCharts(data) {
+    if (!data.length || typeof Chart === 'undefined') return;
+
+    const normal = data.filter(d => !d.is_anomaly);
+    const anomalous = data.filter(d => d.is_anomaly);
+
+    const lineDataset = (items, metric, label, options = {}) => ({
+        label,
+        data: items.map(d => ({ x: d.timestamp, y: Number(d[metric] || 0) })),
+        borderWidth: options.borderWidth || 1.8,
+        pointRadius: options.pointRadius ?? 0,
+        tension: 0.25,
+        fill: false,
+        borderColor: options.color,
+        backgroundColor: options.color,
+    });
+
+    const anomalyDataset = (metric) => ({
+        label: 'Anomalías',
+        data: anomalous.map(d => ({ x: d.timestamp, y: Number(d[metric] || 0) })),
+        type: 'scatter',
+        pointRadius: 4,
+        borderColor: '#ef4444',
+        backgroundColor: '#ef4444',
+    });
+
+    createChart('resourceChart', [
+        lineDataset(normal, 'cpu_usage', 'CPU normal', { color: '#38bdf8' }),
+        lineDataset(normal, 'memory_usage', 'Memoria normal', { color: '#a78bfa' }),
+        anomalyDataset('cpu_usage'),
+    ], 'Recursos (%)');
+
+    createChart('networkChart', [
+        lineDataset(normal, 'network_in_kb', 'Red entrada', { color: '#22c55e' }),
+        lineDataset(normal, 'network_out_kb', 'Red salida', { color: '#14b8a6' }),
+        anomalyDataset('network_in_kb'),
+    ], 'KB');
+
+    createChart('trafficChart', [
+        lineDataset(normal, 'packet_rate', 'Paquetes', { color: '#f59e0b' }),
+        lineDataset(normal, 'avg_response_time_ms', 'Respuesta ms', { color: '#fb7185' }),
+        anomalyDataset('packet_rate'),
+    ], 'Valor');
+
+    createChart('riskChart', [
+        lineDataset(data, 'anomaly_score', 'Puntaje de riesgo', { color: '#eab308', pointRadius: 1 }),
+        anomalyDataset('anomaly_score'),
+    ], 'Riesgo relativo');
+}
+
+function createChart(canvasId, datasets, yLabel) {
+    if (charts[canvasId]) charts[canvasId].destroy();
+    const ctx = $(canvasId);
+    charts[canvasId] = new Chart(ctx, {
+        type: 'line',
+        data: { datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { labels: { color: '#cbd5e1' } },
+            },
+            scales: {
+                x: {
+                    type: 'time',
+                    ticks: { color: '#94a3b8', maxTicksLimit: 6 },
+                    grid: { color: 'rgba(148,163,184,.12)' },
+                },
+                y: {
+                    title: { display: true, text: yLabel, color: '#94a3b8' },
+                    ticks: { color: '#94a3b8' },
+                    grid: { color: 'rgba(148,163,184,.12)' },
+                }
+            }
+        }
+    });
+}
+
+async function loadHistory() {
+    const result = await fetchJson('/analyses');
+    const items = result.items || [];
+    $('historyList').innerHTML = items.map(item => `
+        <article class="history-item">
+            <div>
+                <strong>${escapeHtml(item.filename)}</strong>
+                <small>Análisis #${item.id} · ${new Date(item.uploaded_at).toLocaleString()} · ${escapeHtml(item.model_name)}</small>
+            </div>
+            <div class="history-metrics">
+                <span>${item.total_records} registros</span>
+                <span class="danger-text">${item.anomaly_count} anomalías</span>
+                <span>${Number(item.anomaly_pct).toFixed(2)}%</span>
+                <button onclick="loadAnalysis(${item.id})">Ver</button>
+            </div>
+        </article>
+    `).join('') || '<p class="empty-state">Todavía no hay análisis guardados en la base de datos.</p>';
+}
+
+async function loadAnalysis(id) {
+    const run = await fetchJson(`/analyses/${id}`);
+    const result = {
+        run_id: run.id,
+        model: run.model_name,
+        contamination: run.contamination,
+        features: run.features,
+        label_summary: run.true_label_summary,
+        metrics: {
+            total_records: run.total_records,
+            anomaly_count: run.anomaly_count,
+            anomaly_pct: Number(run.anomaly_pct).toFixed(2),
+            avg_cpu: average(run.observations, 'cpu_usage').toFixed(2),
+            avg_response_time_ms: average(run.observations, 'avg_response_time_ms').toFixed(2),
+            failed_auth_attempts_total: sum(run.observations, 'failed_auth_attempts'),
+        },
+        alerts: run.alerts,
+        data: run.observations,
+    };
+    currentRunId = run.id;
+    currentData = run.observations || [];
+    renderAnalysis(result);
+    document.querySelector('[data-tab="dashboard"]').click();
+}
+
+async function loadAlerts() {
+    const result = await fetchJson('/alerts');
+    const items = result.items || [];
+    $('alertList').innerHTML = items.map(alert => `
+        <article class="alert-item ${escapeHtml(alert.severity)}">
+            <div>
+                <span>${escapeHtml(alert.severity)}</span>
+                <strong>${escapeHtml(alert.title)}</strong>
+                <p>${escapeHtml(alert.description)}</p>
+                <small>Archivo: ${escapeHtml(alert.filename)} · ${new Date(alert.created_at).toLocaleString()}</small>
+            </div>
+        </article>
+    `).join('') || '<p class="empty-state">No hay alertas guardadas.</p>';
+}
+
+function average(items, field) {
+    const vals = items.map(x => Number(x[field])).filter(x => !Number.isNaN(x));
+    return vals.length ? vals.reduce((a,b) => a + b, 0) / vals.length : 0;
+}
+
+function sum(items, field) {
+    return items.map(x => Number(x[field] || 0)).reduce((a,b) => a + b, 0);
+}
+
+$('refreshBtn').addEventListener('click', async () => { await loadHistory(); await loadAlerts(); });
+$('refreshAlertsBtn').addEventListener('click', loadAlerts);
+$('clearHistoryBtn').addEventListener('click', async () => {
+    if (!confirm('Esto eliminará análisis, observaciones y alertas de la base SQLite local. ¿Continuar?')) return;
+    await fetchJson('/analyses', { method: 'DELETE' });
+    currentRunId = null;
+    currentData = [];
+    await loadHistory();
+    await loadAlerts();
+    alert('Base local eliminada.');
+});
+
 document.querySelectorAll('[data-tab]').forEach(link => {
-    link.addEventListener('click', (e) => {
-        e.preventDefault();
-        const tab = link.getAttribute('data-tab');
-        document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
-        document.getElementById(`${tab}Tab`).classList.add('active');
-        document.querySelectorAll('[data-tab]').forEach(l=>l.classList.remove('active'));
+    link.addEventListener('click', (event) => {
+        event.preventDefault();
+        const tab = link.dataset.tab;
+        document.querySelectorAll('[data-tab]').forEach(item => item.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(item => item.classList.remove('active'));
         link.classList.add('active');
-        if(tab==='history') renderHistory();
+        $(`${tab}Tab`).classList.add('active');
+        if (tab === 'history') loadHistory();
+        if (tab === 'alerts') loadAlerts();
     });
 });
-document.getElementById('clearHistoryBtn')?.addEventListener('click',()=>{ if(confirm('Borrar todo?')){ history=[]; saveHistory(); renderHistory(); } });
-loadHistory();
+
+loadHistory().catch(console.error);
+loadAlerts().catch(console.error);

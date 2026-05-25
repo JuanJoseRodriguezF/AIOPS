@@ -2,270 +2,197 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
-    <title>AIOps · Detección de Anomalías</title>
-
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OpsGuard AIOps · Observabilidad y Anomalías</title>
     <link rel="stylesheet" href="/static/style.css" />
-
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/moment@2.29.4/moment.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-moment@1.0.1/dist/chartjs-adapter-moment.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 </head>
-
 <body>
-<div class="app">
-
-    <!-- NAVBAR -->
-    <nav class="navbar">
-        <div class="nav-left">
-            <div class="nav-brand">
-                🔍 AIOps Anomaly Detection
-            </div>
-
-            <div class="ml-badge">
-                🤖 Isolation Forest · ML en tiempo real
+<div class="layout">
+    <aside class="sidebar">
+        <div class="brand-block">
+            <div class="brand-icon">OG</div>
+            <div>
+                <h1>OpsGuard</h1>
+                <span>AIOps Control Center</span>
             </div>
         </div>
 
-        <ul class="nav-links">
-            <li><a href="#" data-tab="dashboard" class="active">Dashboard</a></li>
-            <li><a href="#" data-tab="history">Historial</a></li>
-        </ul>
-    </nav>
+        <nav class="side-nav">
+            <a href="#" data-tab="dashboard" class="active">📡 Centro NOC/SOC</a>
+            <a href="#" data-tab="history">🗄️ Historial BD</a>
+            <a href="#" data-tab="alerts">🚨 Alertas</a>
+            <a href="#" data-tab="architecture">🧩 Diseño solución</a>
+        </nav>
 
-    <main class="main-content">
+        <div class="side-card">
+            <span class="side-label">Motor analítico</span>
+            <strong>Isolation Forest</strong>
+            <small>Modelo no supervisado para identificar desviaciones operativas.</small>
+        </div>
 
-        <!-- DASHBOARD -->
-        <div id="dashboardTab" class="tab-content active">
+        <div class="side-card db-status">
+            <span class="pulse"></span>
+            <div>
+                <strong>SQLite activo</strong>
+                <small>Persistencia local sin costo</small>
+            </div>
+        </div>
+    </aside>
 
-            <!-- HERO -->
-            <section class="hero-section">
-                <div class="hero-content">
-                    <div class="hero-text">
-                        <span class="hero-mini-badge">AIOps Platform</span>
+    <main class="content">
+        <header class="topbar">
+            <div>
+                <span class="eyebrow">AIOps · Detección automática de anomalías</span>
+                <h2>Observabilidad inteligente para sistemas IoT</h2>
+            </div>
+            <div class="top-actions">
+                <button id="refreshBtn" class="ghost-btn">Actualizar BD</button>
+                <a class="api-link" href="/docs" target="_blank">API Docs</a>
+            </div>
+        </header>
 
-                        <h1>
-                            Monitoreo inteligente
-                            <span>de anomalías en tiempo real</span>
-                        </h1>
-
-                        <p>
-                            Detecta comportamientos anómalos en CPU, red y paquetes
-                            utilizando Machine Learning no supervisado con Isolation Forest.
-                        </p>
-
-                        <div class="upload-section">
-                            <input type="file" id="fileInput" accept=".csv">
-                            <button id="uploadBtn">📊 Analizar CSV</button>
-                        </div>
-
-                        <div class="loading" id="loading" style="display: none;">
-                            ⏳ Procesando con Isolation Forest...
-                        </div>
+        <section id="dashboardTab" class="tab-content active">
+            <section class="hero-panel">
+                <div>
+                    <span class="pill">Versión producción académica · sin servicios pagos</span>
+                    <h3>Ingesta, análisis ML, alertamiento y persistencia</h3>
+                    <p>
+                        Sube un CSV de métricas IoT. La API valida datos, ejecuta el modelo, guarda el análisis en SQLite
+                        y genera alertas operativas para lectura tipo NOC/SOC.
+                    </p>
+                </div>
+                <div class="upload-card">
+                    <label for="fileInput">Archivo CSV</label>
+                    <input type="file" id="fileInput" accept=".csv" />
+                    <label for="contaminationInput">Sensibilidad del modelo</label>
+                    <div class="range-row">
+                        <input type="range" id="contaminationInput" min="0.01" max="0.25" step="0.01" value="0.05" />
+                        <strong id="contaminationValue">5%</strong>
                     </div>
-
-                    <div class="hero-card">
-                        <div class="hero-card-top">
-                            <div class="status-dot"></div>
-                            Sistema activo
-                        </div>
-
-                        <div class="hero-metrics">
-                            <div>
-                                <span>ML</span>
-                                <strong>Isolation Forest</strong>
-                            </div>
-
-                            <div>
-                                <span>Estado</span>
-                                <strong>Tiempo real</strong>
-                            </div>
-
-                            <div>
-                                <span>Detección</span>
-                                <strong>Automática</strong>
-                            </div>
-                        </div>
-                    </div>
+                    <button id="uploadBtn" class="primary-btn">Analizar y guardar en BD</button>
+                    <div id="loading" class="loading" style="display:none;">Procesando datos y generando alertas...</div>
                 </div>
             </section>
 
-            <!-- STATS -->
-            <div class="stats-grid" id="statsGrid" style="display: none;">
+            <section class="kpi-grid" id="statsGrid" style="display:none;">
+                <article class="kpi-card"><span>Registros procesados</span><strong id="totalRecords">-</strong><small>Eventos IoT analizados</small></article>
+                <article class="kpi-card critical"><span>Anomalías ML</span><strong id="anomalyCount">-</strong><small id="anomalyPct">-</small></article>
+                <article class="kpi-card"><span>CPU promedio</span><strong id="avgCpu">-</strong><small>Uso agregado</small></article>
+                <article class="kpi-card"><span>Latencia promedio</span><strong id="avgLatency">-</strong><small>Tiempo de respuesta</small></article>
+                <article class="kpi-card"><span>Fallos de autenticación</span><strong id="failedAuth">-</strong><small>Señal de seguridad</small></article>
+            </section>
 
-                <div class="stat-card">
-                    <div class="stat-top">📄 Registros</div>
-                    <p id="totalRecords">-</p>
+            <section id="contextPanel" class="context-grid" style="display:none;">
+                <article class="info-card">
+                    <h4>Modelo y variables usadas</h4>
+                    <div id="featureList" class="tag-list"></div>
+                </article>
+                <article class="info-card">
+                    <h4>Distribución de etiquetas del dataset</h4>
+                    <div id="labelSummary" class="tag-list"></div>
+                </article>
+                <article class="info-card">
+                    <h4>Últimas alertas generadas</h4>
+                    <div id="inlineAlerts" class="inline-alerts"></div>
+                </article>
+            </section>
+
+            <section class="chart-grid">
+                <article class="chart-card"><h4>CPU y memoria</h4><canvas id="resourceChart"></canvas></article>
+                <article class="chart-card"><h4>Tráfico de red</h4><canvas id="networkChart"></canvas></article>
+                <article class="chart-card"><h4>Paquetes y respuesta</h4><canvas id="trafficChart"></canvas></article>
+                <article class="chart-card"><h4>Puntaje de riesgo</h4><canvas id="riskChart"></canvas></article>
+            </section>
+
+            <section class="table-card" id="anomalyTableContainer" style="display:none;">
+                <div class="section-head">
+                    <h4>Detalle operativo de anomalías</h4>
+                    <span id="activeRunLabel">Sin análisis activo</span>
                 </div>
-
-                <div class="stat-card stat-card-clickable" id="anomalyCard">
-                    <div class="stat-top">
-                        🔍 Anomalías
-                        <span class="lupa-icon">🔎</span>
-                    </div>
-
-                    <p id="anomalyCount">-</p>
-                </div>
-
-                <div class="stat-card">
-                    <div class="stat-top">📊 % Anomalías</div>
-                    <p id="anomalyPct">-</p>
-                </div>
-
-                <div class="stat-card">
-                    <div class="stat-top">⚙️ CPU promedio</div>
-                    <p id="avgCpu">-</p>
-                </div>
-
-            </div>
-
-            <!-- INFO -->
-            <div class="info-row" id="infoRow" style="display: none;">
-
-                <div class="normal-ranges">
-                    <h3>📐 Rangos normales (percentil 5-95)</h3>
-                    <div class="ranges-grid" id="rangesGrid"></div>
-                </div>
-
-                <div class="model-explanation">
-                    <h3>🧠 ¿Cómo funciona el modelo?</h3>
-
-                    <p>
-                        <strong>Isolation Forest</strong> detecta anomalías en
-                        datos multidimensionales (CPU, red y paquetes).
-
-                        <br><br>
-
-                        🔹 Entrena automáticamente con los datos cargados.
-
-                        <br>
-
-                        🔹 Marca en rojo los valores fuera del patrón normal.
-
-                        <br>
-
-                        🔹 Funciona sin etiquetas previas
-                        (aprendizaje no supervisado).
-                    </p>
-                </div>
-            </div>
-
-            <!-- ALERTAS -->
-            <div class="alert-panel" id="alertPanel" style="display: none;">
-                <div class="section-title">
-                    🚨 Alertas recientes
-                </div>
-
-                <div id="alertList" class="alert-cards"></div>
-            </div>
-
-            <!-- FILTROS -->
-            <div class="filter-bar" id="filterBar" style="display: none;">
-
-                <div class="date-range-selector">
-                    <label>📅 Desde:</label>
-                    <input type="datetime-local" id="dateFrom" step="1">
-
-                    <label>📅 Hasta:</label>
-                    <input type="datetime-local" id="dateTo" step="1">
-
-                    <button id="applyRangeBtn" class="small-btn">
-                        Aplicar
-                    </button>
-
-                    <button id="resetRangeBtn" class="small-btn">
-                        Reset
-                    </button>
-                </div>
-
-                <button id="resetZoomBtn" class="small-btn">
-                    ↺ Reset zoom gráficos
-                </button>
-            </div>
-
-            <!-- CHARTS -->
-            <div class="charts-grid">
-
-                <div class="chart-card">
-                    <div class="chart-title">Uso de CPU</div>
-                    <div class="chart-container">
-                        <canvas id="cpuChart"></canvas>
-                    </div>
-                </div>
-
-                <div class="chart-card">
-                    <div class="chart-title">Tráfico de Red</div>
-                    <div class="chart-container">
-                        <canvas id="networkChart"></canvas>
-                    </div>
-                </div>
-
-                <div class="chart-card chart-full">
-                    <div class="chart-title">Tasa de Paquetes</div>
-                    <div class="chart-container">
-                        <canvas id="packetChart"></canvas>
-                    </div>
-                </div>
-
-            </div>
-
-            <!-- TABLA -->
-            <div class="anomaly-table-container" id="anomalyTableContainer" style="display: none;">
-
-                <div class="section-title">
-                    📋 Detalle de anomalías (primeras 20)
-                </div>
-
                 <div class="table-wrapper">
-                    <table id="anomalyTable">
+                    <table>
                         <thead>
-                        <tr>
-                            <th>Timestamp</th>
-                            <th>CPU (%)</th>
-                            <th>Red (KB)</th>
-                            <th>Paquetes</th>
-                            <th>Métrica anómala</th>
-                        </tr>
+                            <tr>
+                                <th>Timestamp</th>
+                                <th>Dispositivo</th>
+                                <th>Tipo</th>
+                                <th>CPU</th>
+                                <th>Memoria</th>
+                                <th>Red In/Out</th>
+                                <th>Auth fallidos</th>
+                                <th>Riesgo</th>
+                                <th>Etiqueta</th>
+                            </tr>
                         </thead>
-
-                        <tbody></tbody>
+                        <tbody id="anomalyTableBody"></tbody>
                     </table>
                 </div>
+            </section>
+        </section>
+
+        <section id="historyTab" class="tab-content">
+            <div class="section-head">
+                <div>
+                    <h3>Historial persistido en SQLite</h3>
+                    <p>Cada análisis queda guardado en una base local y puede ser recargado después.</p>
+                </div>
+                <button id="clearHistoryBtn" class="danger-btn">Borrar BD local</button>
             </div>
-        </div>
-
-        <!-- HISTORIAL -->
-        <div id="historyTab" class="tab-content">
-
-            <div class="history-header">
-                <h2>📁 Historial de análisis</h2>
-
-                <button id="clearHistoryBtn" class="clear-btn">
-                    Borrar historial
-                </button>
-            </div>
-
             <div id="historyList" class="history-list"></div>
-        </div>
+        </section>
+
+        <section id="alertsTab" class="tab-content">
+            <div class="section-head">
+                <div>
+                    <h3>Alertas operativas</h3>
+                    <p>Eventos anómalos transformados en señales accionables para un equipo de operaciones TI.</p>
+                </div>
+                <button id="refreshAlertsBtn" class="ghost-btn">Actualizar alertas</button>
+            </div>
+            <div id="alertList" class="alert-list"></div>
+        </section>
+
+        <section id="architectureTab" class="tab-content">
+            <div class="section-head">
+                <div>
+                    <h3>Diseño de solución propuesto</h3>
+                    <p>Arquitectura objetivo para defender el proyecto como prototipo cercano a producción.</p>
+                </div>
+            </div>
+
+            <div class="architecture-flow">
+                <div class="flow-node">Fuentes IoT<br><small>CSV / sensores / logs</small></div>
+                <div class="flow-arrow">→</div>
+                <div class="flow-node">API FastAPI<br><small>Validación e ingesta</small></div>
+                <div class="flow-arrow">→</div>
+                <div class="flow-node">Motor ML<br><small>Isolation Forest</small></div>
+                <div class="flow-arrow">→</div>
+                <div class="flow-node">SQLite<br><small>Runs, eventos, alertas</small></div>
+                <div class="flow-arrow">→</div>
+                <div class="flow-node">Dashboard NOC/SOC<br><small>KPIs y alertas</small></div>
+            </div>
+
+            <div class="design-grid">
+                <article class="info-card">
+                    <h4>Capa de datos</h4>
+                    <p>Almacena análisis, observaciones y alertas. En producción se puede migrar a PostgreSQL o TimescaleDB sin cambiar el concepto de negocio.</p>
+                </article>
+                <article class="info-card">
+                    <h4>Capa analítica</h4>
+                    <p>Normaliza métricas y aplica Isolation Forest para detectar patrones fuera de línea base.</p>
+                </article>
+                <article class="info-card">
+                    <h4>Capa operacional</h4>
+                    <p>Convierte anomalías en alertas con severidad para facilitar la respuesta de equipos TI.</p>
+                </article>
+            </div>
+        </section>
     </main>
 </div>
 
-<!-- MODAL -->
-<div id="detailModal" class="modal">
-
-    <div class="modal-content">
-
-        <span class="close">&times;</span>
-
-        <h3>🔎 Desglose de anomalías por métrica</h3>
-
-        <div id="modalDetails" class="modal-details"></div>
-
-    </div>
-</div>
-
 <script src="/static/script.js"></script>
-
 </body>
 </html>
